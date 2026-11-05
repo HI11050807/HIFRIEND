@@ -1,0 +1,899 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>口袋地圖</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0a6b58">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Huninn&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style>
+/* 版面：左邊清單、中間地圖、右邊新增；手機時地圖在上、面板用分頁切換 */
+:root{
+  --bg:#e9f0ed; --panel:#ffffff; --ink:#14302a; --muted:#566d67; --line:#d3dfda;
+  --soft:#f1f6f4; --accent:#0a6b58; --accent-ink:#ffffff; --danger:#b3261e; --warn-bg:#fff3cf; --warn-ink:#5c4300;
+  --display:"Huninn","Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+  --body:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 var(--body);overflow:hidden}
+button,input,textarea{font:inherit;color:inherit}
+a{color:var(--accent)}
+:focus-visible{outline:3px solid #f0a500;outline-offset:2px}
+
+#app{height:100%;display:grid;grid-template-rows:auto auto minmax(0,1fr)}
+header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));background:var(--accent);color:var(--accent-ink)}
+header h1{font:400 24px/1.2 var(--display);margin:0;letter-spacing:.04em}
+#total{font-size:13px;opacity:.9;font-variant-numeric:tabular-nums}
+.who{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:14px;min-width:0;flex-wrap:wrap}
+.who button{background:none;border:1px solid rgba(255,255,255,.55);color:inherit;border-radius:6px;padding:2px 9px;font-size:13px;cursor:pointer}
+.who button:hover{background:rgba(255,255,255,.14)}
+#banner{background:var(--warn-bg);color:var(--warn-ink);font-size:13px;padding-block:6px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+main{display:grid;grid-template-columns:310px minmax(0,1fr) 330px;min-height:0}
+aside{background:var(--panel);min-height:0;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+#browse{border-right:1px solid var(--line)}
+#add{border-left:1px solid var(--line)}
+#mapWrap{position:relative;min-height:0;min-width:0}
+#map{position:absolute;inset:0;background:#dfe8e4}
+#tabs{display:none}
+
+h2{font:400 18px/1.3 var(--display);margin:0}
+.label{font-size:13px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px}
+.field{display:flex;flex-direction:column;min-width:0}
+.field small{color:var(--muted);font-size:12.5px;margin-top:4px}
+input[type=text],input[type=password],input[type=search],input[type=url],textarea{width:100%;border:1px solid var(--line);border-radius:7px;padding:8px 10px;background:var(--panel)}
+input:focus,textarea:focus{border-color:var(--accent)}
+textarea{min-height:82px;resize:vertical}
+.row{display:flex;gap:8px;min-width:0}
+.row>input{flex:1;min-width:0}
+.btn{border:1px solid var(--line);background:var(--soft);border-radius:7px;padding:8px 12px;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--accent)}
+.btn:disabled{opacity:.55;cursor:default}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700}
+.btn.primary:hover{background:#085a4a}
+.btn.danger{color:var(--danger)}
+.btn.active{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.msg{font-size:13px;color:var(--muted);min-height:0}
+.msg.err{color:var(--danger)}
+.msg.ok{color:var(--accent)}
+
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:3px 10px 3px 6px;font-size:13.5px;cursor:pointer;max-width:100%}
+.chip[aria-pressed=false]{opacity:.5;text-decoration:line-through}
+.chip .n{color:var(--muted);font-variant-numeric:tabular-nums}
+.chip.plain{padding-left:10px}
+.chip.plain[aria-pressed=false]{text-decoration:none;opacity:1;color:var(--muted)}
+.chip.plain[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
+.dot{width:20px;height:20px;border-radius:50%;display:inline-grid;place-items:center;color:#fff;font-size:11.5px;font-weight:700;flex:none}
+
+#list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+#list li+li{border-top:1px solid var(--line)}
+.item{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 10px;width:100%;text-align:left;background:none;border:0;padding:10px 4px;cursor:pointer}
+.item:hover{background:var(--soft)}
+.item .dot{grid-row:span 3;margin-top:2px}
+.item b{font-weight:700;overflow-wrap:anywhere}
+.item .meta{font-size:12.5px;color:var(--muted)}
+.item .note{font-size:13.5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.empty{color:var(--muted);font-size:14px;padding:12px;background:var(--soft);border-radius:8px}
+
+.seg{display:flex;gap:6px}
+.seg label{position:relative;flex:1;text-align:center;border:1px solid var(--line);border-radius:7px;padding:6px 0;cursor:pointer}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg label:has(input:checked){background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.seg label:has(input:focus-visible){outline:3px solid #f0a500;outline-offset:2px}
+#results{list-style:none;margin:6px 0 0;padding:0;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+#results button{display:block;width:100%;text-align:left;border:0;background:none;padding:7px 10px;font-size:13.5px;cursor:pointer;overflow-wrap:anywhere}
+#results li+li{border-top:1px solid var(--line)}
+#results button:hover{background:var(--soft)}
+#platform{font-size:12.5px;color:var(--accent);font-weight:700;margin-top:4px}
+#pinState{margin-top:4px}
+#pinState:empty{display:none}
+.actions{display:flex;gap:8px}
+.actions .primary{flex:1}
+
+/* 地標 */
+.pin{width:34px;height:34px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);display:grid;place-items:center;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)}
+.pin span{transform:rotate(45deg);color:#fff;font:700 14px/1 var(--body)}
+.pin.pending{border-style:dashed;background:#14302a}
+.leaflet-div-icon-reset{background:none;border:0}
+.picking,.picking .leaflet-grab,.picking .leaflet-interactive{cursor:crosshair!important}
+#pickHint{position:absolute;z-index:500;top:12px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--panel);padding:6px 14px;border-radius:999px;font-size:13.5px;white-space:nowrap;max-width:calc(100% - 24px);overflow:hidden;text-overflow:ellipsis}
+
+/* 地標彈出視窗 */
+.leaflet-popup-content{margin:12px 14px;width:250px!important;font:14px/1.5 var(--body)}
+.leaflet-popup-content a.out{color:var(--accent-ink)}
+.pop{display:flex;flex-direction:column;gap:8px}
+.pop h3{font:400 18px/1.3 var(--display);margin:0;padding-right:14px;overflow-wrap:anywhere}
+.pop .by{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);flex-wrap:wrap}
+.pop .note{white-space:pre-wrap;overflow-wrap:anywhere;margin:0;color:var(--ink)}
+.pop .addr{font-size:12.5px;color:var(--muted);overflow-wrap:anywhere}
+.pop a.out{display:block;text-align:center;background:var(--accent);color:var(--accent-ink);border-radius:7px;padding:7px 10px;text-decoration:none;font-weight:700}
+.pop .sub{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px}
+.pop .sub .btn{padding:3px 9px;font-size:13px}
+.pop .sub .gmap{flex:1 0 100%}
+
+/* 進入畫面 */
+#gate{position:fixed;inset:0;z-index:2000;background:var(--accent);display:grid;place-items:center;overflow:auto;padding-block:24px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+#gateCard{background:var(--panel);border-radius:12px;padding:24px;width:100%;max-width:400px;display:flex;flex-direction:column;gap:14px}
+#gateCard h1{font:400 30px/1.2 var(--display);margin:0;letter-spacing:.04em}
+#gateCard p{margin:0;color:var(--muted)}
+#memberBtns{display:flex;flex-wrap:wrap;gap:8px}
+#memberBtns:empty{display:none}
+#memberBtns .chip{padding:6px 14px 6px 8px;font-size:15px}
+
+#toast{position:fixed;z-index:3000;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--panel);padding:8px 16px;border-radius:8px;font-size:14px;max-width:calc(100% - 32px)}
+
+
+/* 分享與待補 */
+#gateCard h2,#helpCard h2{margin:0}
+.shared{background:var(--soft);border-radius:7px;padding:8px 10px;color:var(--ink)!important;font-size:14px}
+#whoBtns{display:flex;flex-direction:column;gap:8px}
+.whoBtn{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--panel);border-radius:9px;padding:11px 12px;font-size:16px;cursor:pointer;text-align:left}
+.whoBtn:hover{border-color:var(--accent);background:var(--soft)}
+.whoBtn.last{border-color:var(--accent);border-width:2px}
+.whoBtn .dot{width:28px;height:28px;font-size:14px}
+#help{position:fixed;inset:0;z-index:2100;background:rgba(10,40,34,.55);display:grid;place-items:center;overflow:auto;padding-block:24px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+#helpCard{background:var(--panel);border-radius:12px;padding:20px;width:100%;max-width:480px;display:flex;flex-direction:column;gap:10px}
+#helpCard h3{font-size:15px;margin:6px 0 0}
+#helpCard ol{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:3px}
+#helpCard p{margin:0}
+#pendingBox{background:var(--warn-bg);border-radius:9px;padding:10px;gap:8px}
+#pendingBox h2{color:var(--warn-ink);font-size:16px}
+#pendingList{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.pend{background:var(--panel);border-radius:7px;padding:8px 10px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.pendHead{display:flex;align-items:center;gap:6px;font-size:13.5px;font-weight:700}
+.pend .note{margin:0;font-size:13px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.pendActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13.5px}
+.pendActions a{margin-right:auto}
+.pendActions .btn{padding:3px 11px}
+.pendActions .meta{font-size:12.5px;color:var(--muted)}
+#platform{margin:0;align-self:center}
+details summary{cursor:pointer;font-size:13.5px;font-weight:700;color:var(--muted)}
+.actions{flex-wrap:wrap}
+.actions .primary{flex:1 1 100%}
+.actions #laterBtn{flex:1}
+.leaflet-popup-content a.out.src{color:var(--accent);background:none;border:1px solid var(--accent)}
+.pop a.out.go{font-size:16px;padding:9px 10px}
+
+@media (max-width:1100px) and (min-width:801px){main{grid-template-columns:270px minmax(0,1fr) 290px}}
+@media (max-width:800px){
+  main{grid-template-columns:minmax(0,1fr);grid-template-rows:42% auto minmax(0,1fr)}
+  #mapWrap{grid-row:1}
+  #tabs{display:grid;grid-template-columns:1fr 1fr;grid-row:2;background:var(--panel);border-block:1px solid var(--line)}
+  #tabs button{border:0;background:none;padding:10px;cursor:pointer;color:var(--muted);border-bottom:3px solid transparent}
+  #tabs button[aria-selected=true]{color:var(--accent);font-weight:700;border-bottom-color:var(--accent)}
+  aside{grid-row:3;border:0!important;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
+  main[data-tab=browse] #add,main[data-tab=add] #browse{display:none}
+  header{padding-block:7px;padding-top:calc(7px + env(safe-area-inset-top,0px))}
+  header h1{font-size:20px}
+  #total{display:none}
+  input,textarea{font-size:16px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div id="gate" hidden>
+  <div id="gateCard">
+    <h1 class="siteName">口袋地圖</h1>
+    <form id="passForm" class="field" hidden style="gap:12px">
+      <p>輸入你們約好的通關密語，就能看到同一張地圖。</p>
+      <div class="field">
+        <label class="label" for="pass">通關密語</label>
+        <input id="pass" type="password" autocomplete="off" required>
+        <small>第一個輸入的人就等於建立了這張地圖。密語打錯會進到另一張空白地圖。</small>
+      </div>
+      <button class="btn primary" id="passBtn" type="submit">進入地圖</button>
+      <div class="msg err" id="passMsg" role="alert"></div>
+    </form>
+    <div id="whoStep" class="field" hidden style="gap:12px">
+      <p id="whoShared" class="shared" hidden></p>
+      <h2>請問你是？</h2>
+      <div id="whoBtns"></div>
+      <button class="btn" id="whoCancel" type="button" hidden>取消</button>
+    </div>
+  </div>
+</div>
+
+<div id="help" hidden>
+  <div id="helpCard" role="dialog" aria-labelledby="helpTitle">
+    <h2 id="helpTitle">把貼文分享到這裡</h2>
+    <h3>Android</h3>
+    <ol>
+      <li>用 Chrome 開啟這個網站。</li>
+      <li>在 Chrome 選單按「安裝應用程式」或「加到主畫面」。</li>
+      <li>之後在貼文按「分享」，選擇這個網站。</li>
+    </ol>
+    <h3>iPhone</h3>
+    <ol>
+      <li>先用 Safari 開啟這個網站，輸入通關密語。</li>
+      <li>打開「捷徑」App，新增捷徑，在詳細資訊開啟「在分享表單中顯示」。</li>
+      <li>加入動作「URL 編碼」，內容選「捷徑輸入」。</li>
+      <li>加入動作「URL」，貼上下面的網址，並在最後插入上一步的「URL 編碼的文字」。</li>
+      <li>加入動作「打開 URL」，把捷徑命名後儲存。</li>
+      <li>之後在貼文按「分享」，選擇這個捷徑。</li>
+    </ol>
+    <div class="row">
+      <input id="helpUrl" type="text" readonly aria-label="捷徑要用的網址">
+      <button class="btn" id="helpCopy" type="button">複製</button>
+    </div>
+    <h3>電腦或其他情況</h3>
+    <p>複製連結或貼文文字，貼到「新增地點」最上面的欄位。</p>
+    <button class="btn primary" id="helpClose" type="button">知道了</button>
+  </div>
+</div>
+
+<div id="app">
+  <header>
+    <h1 class="siteName">口袋地圖</h1>
+    <span id="total"></span>
+    <div class="who">
+      <button id="helpBtn" type="button">分享設定</button>
+      <span id="meChip" class="dot" hidden></span><span id="meName"></span>
+      <button id="switchBtn" type="button">換人</button>
+      <button id="leaveBtn" type="button" hidden>登出</button>
+    </div>
+  </header>
+  <div id="banner" hidden></div>
+  <main data-tab="browse">
+    <aside id="browse" aria-label="地標清單">
+      <section id="pendingBox" class="field" hidden>
+        <h2 id="pendingTitle">待補</h2>
+        <ul id="pendingList"></ul>
+      </section>
+      <div class="field">
+        <span class="label">顯示誰的地標</span>
+        <div class="chips" id="people"></div>
+      </div>
+      <div class="field">
+        <span class="label">分類</span>
+        <div class="chips" id="cats"></div>
+      </div>
+      <div class="field">
+        <label class="label" for="q">搜尋</label>
+        <input id="q" type="search" placeholder="名稱、簡介或地區">
+      </div>
+      <ul id="list"></ul>
+      <div class="empty" id="listEmpty" hidden></div>
+    </aside>
+    <div id="mapWrap">
+      <div id="map" role="application" aria-label="台灣地標地圖"></div>
+      <div id="pickHint" hidden>點地圖上的位置放圖釘</div>
+    </div>
+    <div id="tabs" role="tablist">
+      <button id="tabBrowse" role="tab" aria-selected="true" type="button">清單</button>
+      <button id="tabAdd" role="tab" aria-selected="false" type="button">新增地點</button>
+    </div>
+    <aside id="add" aria-label="新增地點">
+      <h2 id="formTitle">新增地點</h2>
+      <div id="ownerNote" class="msg" hidden></div>
+      <form id="placeForm" class="field" style="gap:14px" novalidate>
+        <div class="field">
+          <label class="label" for="paste">貼上連結或貼文文字</label>
+          <textarea id="paste" rows="3" placeholder="可以貼 IG、Threads、小紅書、YouTube 或 Google Maps"></textarea>
+          <div class="row" style="margin-top:6px;align-items:center">
+            <button class="btn" id="analyzeBtn" type="button">自動辨識</button>
+            <span id="platform" hidden></span>
+          </div>
+          <div class="msg" id="analyzeMsg" role="status"></div>
+          <ul id="results" hidden></ul>
+        </div>
+        <div class="field">
+          <label class="label" for="name">地點名稱</label>
+          <input id="name" type="text" maxlength="80" placeholder="例如：XX火鍋">
+        </div>
+        <div class="field">
+          <label class="label" for="area">地區或地址</label>
+          <input id="area" type="text" maxlength="200" placeholder="例如：臺中市沙鹿區XX路">
+          <div id="pinState" class="msg"></div>
+        </div>
+        <details id="fine">
+          <summary>調整地圖位置</summary>
+          <div class="field" style="gap:8px;margin-top:8px">
+            <button class="btn" id="pickBtn" type="button">在地圖上點選</button>
+            <label class="label" for="coords" style="font-weight:400;margin:0">或貼 Google Maps 網址／座標</label>
+            <input id="coords" type="text" inputmode="url" placeholder="25.1092, 121.8452">
+            <div class="msg" id="coordsMsg" role="status"></div>
+          </div>
+        </details>
+        <div class="field">
+          <span class="label">分類</span>
+          <div class="seg">
+            <label><input type="radio" name="category" value="food" checked>美食</label>
+            <label><input type="radio" name="category" value="spot">景點</label>
+            <label><input type="radio" name="category" value="other">其他</label>
+          </div>
+        </div>
+        <div class="field">
+          <label class="label" for="url">原文網址</label>
+          <input id="url" type="text" inputmode="url" placeholder="https://">
+        </div>
+        <div class="field">
+          <label class="label" for="note">簡介</label>
+          <textarea id="note" maxlength="300" placeholder="為什麼想去？推薦什麼？"></textarea>
+        </div>
+        <div class="msg err" id="formMsg" role="alert"></div>
+        <div class="actions">
+          <button class="btn primary" id="saveBtn" type="submit">放上地圖</button>
+          <button class="btn" id="laterBtn" type="button">先存起來，之後再補</button>
+          <button class="btn" id="cancelEdit" type="button" hidden>取消</button>
+        </div>
+      </form>
+    </aside>
+  </main>
+</div>
+<div id="toast" role="status" hidden></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="config.js"></script>
+<script>
+(function(){
+"use strict";
+const $=id=>document.getElementById(id);
+const FB_VER="10.14.1";
+const PALETTE=["#c9244f","#1f62d0","#0a7d55","#a85400","#7338c9","#b81f97","#006f82","#7d6400"];
+const CATS={food:"美食",spot:"景點",other:"其他"};
+const LIMITS={write:12000,load:10000,ai:30000};
+const COUNTIES={"臺北市":[25.04,121.56],"新北市":[25.01,121.47],"基隆市":[25.13,121.74],"桃園市":[24.99,121.30],"新竹市":[24.80,120.97],"新竹縣":[24.70,121.12],"苗栗縣":[24.49,120.94],"臺中市":[24.15,120.67],"彰化縣":[24.00,120.50],"南投縣":[23.90,120.97],"雲林縣":[23.70,120.43],"嘉義市":[23.48,120.45],"嘉義縣":[23.45,120.50],"臺南市":[23.00,120.21],"高雄市":[22.63,120.30],"屏東縣":[22.55,120.55],"宜蘭縣":[24.70,121.74],"花蓮縣":[23.75,121.50],"臺東縣":[22.85,121.10],"澎湖縣":[23.57,119.60],"金門縣":[24.44,118.35],"連江縣":[26.16,119.95]};
+
+/* ---------- 身分 ---------- */
+const names=(Array.isArray(window.PEOPLE)&&window.PEOPLE.length?window.PEOPLE:["朋友A","朋友B","朋友C","朋友D","管理員"]).slice(0,12);
+const members={};
+names.forEach((n,i)=>{members["m"+(i+1)]={name:String(n),color:PALETTE[i%PALETTE.length]}});
+const ADMIN="m"+names.length;
+const memberOf=id=>members[id]||{name:"不明",color:"#566d67"};
+const canEdit=p=>p.memberId===meId||meId===ADMIN;
+
+/* ---------- 小工具 ---------- */
+const ls={
+  get(k){try{return localStorage.getItem(k)}catch(e){return null}},
+  set(k,v){try{localStorage.setItem(k,v)}catch(e){}},
+  del(k){try{localStorage.removeItem(k)}catch(e){}}
+};
+function el(tag,props,...kids){
+  const n=document.createElement(tag);
+  for(const k in props||{}){
+    if(k==="class")n.className=props[k];
+    else if(k==="text")n.textContent=props[k];
+    else if(k.startsWith("on"))n.addEventListener(k.slice(2),props[k]);
+    else n.setAttribute(k,props[k]);
+  }
+  kids.forEach(c=>c&&n.append(c));
+  return n;
+}
+function newId(){
+  const a=new Uint8Array(12);crypto.getRandomValues(a);
+  return Array.from(a,b=>b.toString(16).padStart(2,"0")).join("");
+}
+let toastTimer;
+function toast(t){const n=$("toast");n.textContent=t;n.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>n.hidden=true,3500)}
+function setMsg(id,t,cls){const n=$(id);n.textContent=t||"";n.className="msg"+(cls?" "+cls:"")}
+function withTimeout(p,ms,label){
+  return Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej({code:"timeout",message:label}),ms))]);
+}
+function explain(e){
+  const c=String(e&&e.code||"");
+  if(c.includes("permission-denied"))return "資料庫拒絕了這個動作。請確認 Firestore 的規則已經貼上並發布。";
+  if(c==="timeout")return "連不上資料庫，請檢查網路後再試一次。";
+  if(c.includes("not-found"))return "找不到資料庫。請確認已在 Firebase 建立 Firestore。";
+  return "發生錯誤："+(e&&e.message||"未知原因");
+}
+
+/* ---------- 網址與座標 ---------- */
+const URL_RE=/https?:\/\/[^\s<>"'，。、！？）)】」]+/i;
+function extractUrl(text){
+  const m=String(text||"").match(URL_RE);
+  if(!m)return "";
+  try{const u=new URL(m[0]);return /^https?:$/.test(u.protocol)?u.href:""}catch(e){return ""}
+}
+function platformOf(url){
+  let h="";try{h=new URL(url).hostname.replace(/^www\./,"").toLowerCase()}catch(e){return "連結"}
+  const is=d=>h===d||h.endsWith("."+d);
+  if(is("instagram.com"))return "Instagram";
+  if(is("threads.net")||is("threads.com"))return "Threads";
+  if(is("xiaohongshu.com")||is("xhslink.com"))return "小紅書";
+  if(is("youtube.com")||is("youtu.be"))return "YouTube";
+  if(is("tiktok.com"))return "TikTok";
+  if(is("facebook.com")||is("fb.watch")||is("fb.com"))return "Facebook";
+  if(is("maps.app.goo.gl")||is("goo.gl")||/^(maps\.)?google\./.test(h))return "Google Maps";
+  return h||"連結";
+}
+function parseCoords(text){
+  const s=String(text||"").trim();
+  const pats=[/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/,/@(-?\d+\.\d+),(-?\d+\.\d+)/,/[?&](?:q|query|ll|destination)=(-?\d+\.\d+)(?:,|%2C)(-?\d+\.\d+)/i,/^(-?\d{1,2}(?:\.\d+)?)\s*[,，\s]\s*(-?\d{1,3}(?:\.\d+)?)$/];
+  for(const p of pats){
+    const m=s.match(p);
+    if(m){const lat=+m[1],lng=+m[2];if(Math.abs(lat)<=90&&Math.abs(lng)<=180)return{lat,lng}}
+  }
+  return null;
+}
+const gmapsLink=p=>"https://www.google.com/maps/search/?api=1&query="+encodeURIComponent([p.name,p.area].filter(Boolean).join(" "));
+
+/* ---------- 大概位置 ---------- */
+let lastGeo=0;
+async function nominatim(q,tw){
+  const wait=1200-(Date.now()-lastGeo);
+  if(wait>0)await new Promise(r=>setTimeout(r,wait));
+  lastGeo=Date.now();
+  const res=await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=zh-TW"+(tw?"&countrycodes=tw":"")+"&q="+encodeURIComponent(q));
+  if(!res.ok)throw new Error(String(res.status));
+  const d=await res.json();
+  return d[0]?{lat:+d[0].lat,lng:+d[0].lon}:null;
+}
+async function locate(area,name){
+  const a=String(area||"").replace(/台/g,"臺").trim();
+  const countyMatch=a.match(/(臺北市|新北市|基隆市|桃園市|新竹市|新竹縣|苗栗縣|臺中市|彰化縣|南投縣|雲林縣|嘉義市|嘉義縣|臺南市|高雄市|屏東縣|宜蘭縣|花蓮縣|臺東縣|澎湖縣|金門縣|連江縣)/);
+  const county=countyMatch?countyMatch[1]:"";
+  const rest=county?a.slice(a.indexOf(county)+county.length):a;
+  const dist=(rest.match(/^(.{1,4}?[區鄉鎮市])/)||[])[1]||"";
+  const tries=[];
+  if(a)tries.push(a);
+  if(county&&dist)tries.push(county+dist);
+  else if(dist)tries.push(dist);
+  if(!a&&name)tries.push(name);
+  try{
+    for(const q of [...new Set(tries)].slice(0,3)){
+      const hit=await nominatim(q,!!county||/[區鄉鎮市路街]/.test(q));
+      if(hit)return hit;
+    }
+  }catch(e){}
+  if(county)return{lat:COUNTIES[county][0],lng:COUNTIES[county][1]};
+  return null;
+}
+
+/* ---------- 資料儲存：示範模式 ---------- */
+function createLocalStore(){
+  const KEY="pocketmap.demo.v2";
+  let state=null;
+  try{state=JSON.parse(ls.get(KEY)||"null")}catch(e){}
+  if(!state){
+    const now=Date.now();
+    const base={exact:false,sharedText:"",status:"done",updatedAt:now};
+    state={places:{
+      p1:{...base,name:"九份老街",lat:25.1092,lng:121.8452,area:"新北市瑞芳區",url:"https://www.instagram.com/",note:"範例資料：芋圓和夜景都想去。",category:"food",memberId:"m1",createdAt:now-4e6},
+      p2:{...base,name:"高美濕地",lat:24.3123,lng:120.5495,area:"臺中市清水區",url:"https://www.threads.net/",note:"範例資料：據說夕陽時段最漂亮。",category:"spot",memberId:"m2",createdAt:now-3e6},
+      p3:{...base,name:"奇美博物館",lat:22.9347,lng:120.2262,area:"臺南市仁德區",url:"https://www.youtube.com/",note:"範例資料：影片裡的建築很壯觀。",category:"spot",memberId:"m3",createdAt:now-2e6},
+      p4:{...base,name:"六合夜市",lat:22.6319,lng:120.3019,area:"高雄市新興區",url:"https://www.xiaohongshu.com/",note:"範例資料：收藏了好幾攤想吃的。",category:"food",memberId:"m"+names.length,createdAt:now-1e6},
+      p5:{...base,status:"pending",name:"",lat:null,lng:null,area:"",url:"https://www.threads.net/",note:"",sharedText:"範例資料：查不到內容的貼文會先放在這裡。",category:"other",memberId:"m4",createdAt:now-5e5}
+    }};
+  }
+  const subs=[];
+  const emit=()=>{const arr=Object.entries(state.places).map(([id,d])=>({id,...d}));subs.forEach(f=>f(arr))};
+  const save=()=>ls.set(KEY,JSON.stringify(state));
+  return{
+    demo:true,
+    onPlaces(f){subs.push(f);setTimeout(emit);return()=>{}},
+    async savePlace(id,d){state.places[id]=d;save();emit()},
+    async deletePlace(id){delete state.places[id];save();emit()}
+  };
+}
+
+/* ---------- 資料儲存：Firebase ---------- */
+async function createFirebaseStore(cfg,roomId){
+  const base="https://www.gstatic.com/firebasejs/"+FB_VER+"/";
+  const [{initializeApp},fs]=await Promise.all([import(base+"firebase-app.js"),import(base+"firebase-firestore.js")]);
+  const db=fs.getFirestore(initializeApp(cfg));
+  const col=fs.collection(db,"rooms",roomId,"places");
+  const ref=id=>fs.doc(db,"rooms",roomId,"places",id);
+  return{
+    demo:false,
+    onPlaces:(f,err)=>fs.onSnapshot(col,s=>f(s.docs.map(d=>({id:d.id,...d.data()}))),err),
+    savePlace:(id,d)=>fs.setDoc(ref(id),d),
+    deletePlace:id=>fs.deleteDoc(ref(id))
+  };
+}
+async function roomFromPass(cfg,pass){
+  if(!crypto.subtle)throw{code:"insecure",message:"網站必須用 https 網址開啟。"};
+  const buf=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(cfg.projectId+":"+pass.trim()));
+  return Array.from(new Uint8Array(buf),b=>b.toString(16).padStart(2,"0")).join("");
+}
+
+/* ---------- 狀態 ---------- */
+let store=null,map=null,markers=null,pendingMarker=null,picking=false,room=null;
+let places=[],meId=null,editingId=null,openId=null,fitted=false,incoming=null,started=false;
+let hidden=new Set(),cat="all",query="",pending=null,deleteArmed=null,locateSeq=0;
+const initial=name=>Array.from((name||"?").trim())[0]||"?";
+function dot(m){const d=el("span",{class:"dot",text:initial(m.name)});d.style.background=m.color;return d}
+const donePlaces=()=>places.filter(p=>p.status!=="pending");
+const pendingPlaces=()=>places.filter(p=>p.status==="pending").sort((a,b)=>b.createdAt-a.createdAt);
+function jitter(p){
+  if(p.exact)return[p.lat,p.lng];
+  let h=0;for(const c of p.id)h=(h*31+c.charCodeAt(0))|0;
+  return[p.lat+((h&255)/255-.5)*.012,p.lng+(((h>>8)&255)/255-.5)*.012];
+}
+
+/* ---------- 地圖 ---------- */
+function initMap(){
+  map=L.map("map",{zoomControl:true}).setView([23.7,121],7);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> 貢獻者'}).addTo(map);
+  markers=L.layerGroup().addTo(map);
+  map.on("click",e=>{if(picking){setPending(e.latlng.lat,e.latlng.lng,true,false);setPicking(false)}});
+  map.on("popupopen",e=>{openId=e.popup._source&&e.popup._source.placeId||null});
+  map.on("popupclose",()=>{openId=null;deleteArmed=null});
+  new ResizeObserver(()=>map.invalidateSize()).observe($("mapWrap"));
+}
+function pinIcon(color,text,cls){
+  const box=el("div",{class:"pin "+(cls||"")},el("span",{text}));
+  if(color)box.style.background=color;
+  return L.divIcon({className:"leaflet-div-icon-reset",html:box,iconSize:[34,34],iconAnchor:[17,40],popupAnchor:[0,-38]});
+}
+function visible(){
+  const q=query.toLowerCase();
+  return donePlaces().filter(p=>!hidden.has(p.memberId)&&(cat==="all"||p.category===cat)&&(!q||[p.name,p.note,p.area].join(" ").toLowerCase().includes(q)))
+    .sort((a,b)=>b.createdAt-a.createdAt);
+}
+function popupFor(p){
+  const m=memberOf(p.memberId);
+  const box=el("div",{class:"pop"},
+    el("h3",{text:p.name}),
+    el("div",{class:"by"},dot(m),el("span",{text:m.name+" · "+(CATS[p.category]||"其他")+" · "+new Date(p.createdAt).toLocaleDateString("zh-TW")})),
+    p.note?el("p",{class:"note",text:p.note}):null,
+    p.area?el("div",{class:"addr",text:(p.exact?"":"大概位置：")+p.area}):null,
+    el("a",{class:"out go",href:gmapsLink(p),target:"_blank",rel:"noopener noreferrer",text:"帶我去"}),
+    p.url?el("a",{class:"out src",href:p.url,target:"_blank",rel:"noopener noreferrer",text:"看 "+platformOf(p.url)+" 原文 ↗"}):null
+  );
+  if(canEdit(p)){
+    const sub=el("div",{class:"sub"});
+    sub.append(el("button",{class:"btn",type:"button",text:"編輯",onclick:()=>startEdit(p)}));
+    sub.append(deleteButton(p));
+    box.append(sub);
+  }
+  return box;
+}
+function deleteButton(p){
+  const del=el("button",{class:"btn danger",type:"button",text:"刪除",onclick:async()=>{
+    if(deleteArmed!==p.id){deleteArmed=p.id;del.textContent="確定刪除？";return}
+    deleteArmed=null;map.closePopup();
+    try{await withTimeout(store.deletePlace(p.id),LIMITS.write,"timeout");toast("已刪除");if(editingId===p.id)resetForm()}catch(e){toast(explain(e))}
+  }});
+  return del;
+}
+function renderMap(list){
+  const reopen=openId;
+  markers.clearLayers();
+  const byId={};
+  list.forEach(p=>{
+    const m=memberOf(p.memberId);
+    const mk=L.marker(jitter(p),{icon:pinIcon(m.color,initial(m.name)),title:p.name+"（"+m.name+"）",alt:p.name});
+    mk.placeId=p.id;
+    mk.bindPopup(()=>popupFor(p),{maxWidth:280,minWidth:250});
+    markers.addLayer(mk);
+    byId[p.id]=mk;
+  });
+  map._pmMarkers=byId;
+  if(reopen&&byId[reopen])byId[reopen].openPopup();
+  const all=donePlaces();
+  if(!fitted&&all.length){
+    fitted=true;
+    map.fitBounds(all.map(p=>[p.lat,p.lng]),{padding:[40,40],maxZoom:9});
+  }
+}
+
+/* ---------- 左側清單 ---------- */
+function renderPeople(){
+  const box=$("people");box.replaceChildren();
+  const counts={};donePlaces().forEach(p=>counts[p.memberId]=(counts[p.memberId]||0)+1);
+  Object.entries(members).forEach(([id,m])=>{
+    box.append(el("button",{class:"chip",type:"button","aria-pressed":String(!hidden.has(id)),title:"顯示或隱藏 "+m.name+" 的地標",onclick:()=>{hidden.has(id)?hidden.delete(id):hidden.add(id);render()}},dot(m),el("span",{text:m.name}),el("span",{class:"n",text:String(counts[id]||0)})));
+  });
+}
+function renderCats(){
+  const box=$("cats");box.replaceChildren();
+  [["all","全部"],...Object.entries(CATS)].forEach(([k,t])=>{
+    box.append(el("button",{class:"chip plain",type:"button","aria-pressed":String(cat===k),text:t,onclick:()=>{cat=k;render()}}));
+  });
+}
+function renderPending(){
+  const list=pendingPlaces(),box=$("pendingBox"),ul=$("pendingList");
+  box.hidden=!list.length;
+  $("pendingTitle").textContent="待補 "+list.length+" 筆";
+  ul.replaceChildren();
+  list.forEach(p=>{
+    const m=memberOf(p.memberId);
+    const can=canEdit(p);
+    const head=el("div",{class:"pendHead"},dot(m),el("span",{text:m.name+" · "+(p.url?platformOf(p.url):"沒有網址")}));
+    const row=el("div",{class:"pendActions"});
+    if(p.url)row.append(el("a",{href:p.url,target:"_blank",rel:"noopener noreferrer",text:"看原文 ↗"}));
+    if(can){
+      row.append(el("button",{class:"btn primary",type:"button",text:"填寫",onclick:()=>startEdit(p)}));
+      row.append(deleteButton(p));
+    }else row.append(el("span",{class:"meta",text:"等 "+m.name+" 或 "+memberOf(ADMIN).name+" 補"}));
+    ul.append(el("li",{class:"pend"},head,p.sharedText?el("p",{class:"note",text:p.sharedText}):null,row));
+  });
+}
+function renderList(list){
+  const ul=$("list");ul.replaceChildren();
+  list.forEach(p=>{
+    const m=memberOf(p.memberId);
+    ul.append(el("li",null,el("button",{class:"item",type:"button",onclick:()=>focusPlace(p)},
+      dot(m),el("b",{text:p.name}),
+      el("span",{class:"meta",text:[m.name,p.area||CATS[p.category]].filter(Boolean).join(" · ")}),
+      p.note?el("span",{class:"note",text:p.note}):null)));
+  });
+  const e=$("listEmpty");
+  e.hidden=list.length>0;
+  e.textContent=donePlaces().length?"沒有符合條件的地標，換個篩選條件試試。":"還沒有地標。在貼文按分享傳到這裡，或用「新增地點」貼上第一個連結。";
+}
+function focusPlace(p){
+  map.flyTo(jitter(p),p.exact?16:13,{duration:.6});
+  const mk=map._pmMarkers[p.id];if(mk)mk.openPopup();
+}
+function render(){
+  const list=visible();
+  renderPending();renderPeople();renderCats();renderList(list);renderMap(list);
+  $("total").textContent="共 "+donePlaces().length+" 個地標";
+  const me=members[meId];
+  if(me){const c=$("meChip");c.hidden=false;c.textContent=initial(me.name);c.style.background=me.color;$("meName").textContent=me.name}
+}
+
+/* ---------- 表單 ---------- */
+function setPicking(on){
+  picking=on;
+  $("pickHint").hidden=!on;
+  $("map").classList.toggle("picking",on);
+  $("pickBtn").textContent=on?"取消點選":"在地圖上點選";
+  $("pickBtn").classList.toggle("active",on);
+}
+function setPending(lat,lng,exact,fly){
+  pending={lat:+lat,lng:+lng,exact:!!exact};
+  if(pendingMarker)pendingMarker.remove();
+  pendingMarker=L.marker([pending.lat,pending.lng],{icon:pinIcon(null,initial(memberOf(meId).name),"pending"),draggable:true,zIndexOffset:1000,title:"拖曳可微調位置"}).addTo(map);
+  pendingMarker.on("dragend",()=>{const l=pendingMarker.getLatLng();pending.lat=l.lat;pending.lng=l.lng;pending.exact=true;showPin()});
+  if(fly)map.flyTo([pending.lat,pending.lng],exact?15:11,{duration:.6});
+  showPin();
+}
+function showPin(){
+  if(!pending){setMsg("pinState","");return}
+  setMsg("pinState",pending.exact?"位置已放在地圖上。":"已標出大概位置。不準也沒關係，「帶我去」會用店名搜尋。","ok");
+}
+function clearPending(){pending=null;if(pendingMarker){pendingMarker.remove();pendingMarker=null}showPin()}
+async function autoLocate(){
+  if(pending&&pending.exact)return;
+  const area=$("area").value.trim(),name=$("name").value.trim();
+  if(!area&&!name)return;
+  const seq=++locateSeq;
+  setMsg("pinState","正在找大概位置…");
+  const hit=await locate(area,name);
+  if(seq!==locateSeq)return;
+  if(pending&&pending.exact)return showPin();
+  if(hit)setPending(hit.lat,hit.lng,false,true);
+  else{clearPending();setMsg("pinState","找不到這個地區。可以改寫地區，或展開「調整地圖位置」自己點。","err")}
+}
+function updatePlatform(){
+  const u=extractUrl($("url").value)||extractUrl($("paste").value),n=$("platform");
+  n.hidden=!u;n.textContent=u?platformOf(u):"";
+}
+function resetForm(){
+  editingId=null;locateSeq++;$("placeForm").reset();clearPending();setPicking(false);
+  $("results").hidden=true;$("results").replaceChildren();$("fine").open=false;
+  ["analyzeMsg","coordsMsg","formMsg"].forEach(i=>setMsg(i,""));
+  setMsg("formMsg","","err");
+  updatePlatform();
+  $("ownerNote").hidden=true;
+  $("formTitle").textContent="新增地點";$("saveBtn").textContent="放上地圖";$("laterBtn").hidden=false;$("cancelEdit").hidden=true;
+}
+function startEdit(p){
+  resetForm();editingId=p.id;
+  $("url").value=p.url||"";$("name").value=p.name||"";$("area").value=p.area||"";$("note").value=p.note||"";
+  $("paste").value=[p.sharedText,p.url].filter(Boolean).join("\n");
+  const r=document.querySelector('input[name=category][value="'+p.category+'"]');if(r)r.checked=true;
+  updatePlatform();map.closePopup();
+  if(p.status!=="pending")setPending(p.lat,p.lng,p.exact,false);
+  $("formTitle").textContent=p.status==="pending"?"補完這筆地點":"編輯地點";
+  $("saveBtn").textContent=p.status==="pending"?"放上地圖":"儲存變更";
+  $("laterBtn").hidden=p.status!=="pending";
+  $("cancelEdit").hidden=false;
+  const owner=$("ownerNote");owner.hidden=false;owner.textContent="這筆是 "+memberOf(p.memberId).name+" 分享的。";
+  setTab("add");
+}
+function applyPlace(p){
+  $("name").value=p.name||"";
+  const area=[p.city,p.district,p.road].filter(Boolean).join("");
+  if(area)$("area").value=area;
+  const r=document.querySelector('input[name=category][value="'+p.category+'"]');if(r)r.checked=true;
+  $("results").hidden=true;
+  clearPending();
+  if(typeof p.lat==="number")setPending(p.lat,p.lng,true,true);else autoLocate();
+  setMsg("analyzeMsg","已填好，請確認內容，再寫簡介。","ok");
+  $("note").focus({preventScroll:true});
+}
+const FAIL="讀不到地點。可以貼上貼文文字再辨識一次、直接手動填寫，或按「先存起來」之後再補。";
+async function analyze(){
+  const raw=$("paste").value.trim();
+  const url=extractUrl(raw),text=raw.replace(URL_RE,"").trim();
+  if(!raw){setMsg("analyzeMsg","請先貼上連結或貼文文字。","err");return}
+  if(url)$("url").value=url;
+  updatePlatform();
+  const local=url&&parseCoords(url);
+  if(local)setPending(local.lat,local.lng,true,true);
+  if(!window.AI_ENDPOINT||!room){
+    setMsg("analyzeMsg",store.demo?"示範模式不能自動辨識，請手動填寫或先存起來。":"還沒設定自動辨識，請手動填寫或先存起來。","err");return
+  }
+  const btn=$("analyzeBtn"),ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),LIMITS.ai);
+  btn.disabled=true;setMsg("analyzeMsg","正在辨識…");
+  const ul=$("results");ul.hidden=true;ul.replaceChildren();
+  try{
+    const res=await fetch(window.AI_ENDPOINT,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({room,url,text}),signal:ctl.signal});
+    const d=await res.json().catch(()=>({}));
+    if(res.status===401){setMsg("analyzeMsg","後端的通關密語和地圖不同，請管理員檢查 Worker 設定。"+" 現在可以先手動填寫。","err");return}
+    if(res.status===429){setMsg("analyzeMsg","今天的免費辨識額度暫時用完了，請稍後再試，或先手動填寫。","err");return}
+    if(!res.ok){setMsg("analyzeMsg","辨識服務暫時有問題。"+FAIL,"err");return}
+    const list=d.places||[];
+    if(typeof d.lat==="number")setPending(d.lat,d.lng,true,true);
+    if(!list.length){setMsg("analyzeMsg",FAIL,"err");return}
+    if(list.length===1){applyPlace(list[0]);return}
+    setMsg("analyzeMsg","這則貼文有好幾個地點，選一個：");
+    list.forEach(p=>ul.append(el("li",null,el("button",{type:"button",text:p.name+(p.city||p.district?"（"+p.city+p.district+"）":""),onclick:()=>applyPlace(p)}))));
+    ul.hidden=false;
+  }catch(e){setMsg("analyzeMsg",(e&&e.name==="AbortError"?"辨識等太久了。":"連不上辨識服務。")+FAIL,"err")}
+  finally{clearTimeout(timer);btn.disabled=false}
+}
+function handleCoords(){
+  const s=$("coords").value.trim();
+  if(!s){setMsg("coordsMsg","");return}
+  const c=parseCoords(s);
+  if(c){setPending(c.lat,c.lng,true,true);setMsg("coordsMsg","已放上圖釘。","ok");return}
+  if(/maps\.app\.goo\.gl|goo\.gl\/maps/i.test(s)){setMsg("coordsMsg","短網址請貼到最上面的欄位並按「自動辨識」。","err");return}
+  setMsg("coordsMsg","看不懂這個格式。請貼完整的 Google Maps 網址，或像 25.1092, 121.8452 的座標。","err");
+}
+function readUrlField(){
+  const v=$("url").value.trim();
+  if(!v)return{url:""};
+  const u=extractUrl(v);
+  return u?{url:u.slice(0,2000)}:{error:true};
+}
+function record(status){
+  const now=Date.now(),old=editingId&&places.find(p=>p.id===editingId);
+  const {url}=readUrlField();
+  const raw=$("paste").value.replace(URL_RE,"").trim().slice(0,2000);
+  return{
+    name:$("name").value.trim(),
+    lat:status==="done"?pending.lat:null,lng:status==="done"?pending.lng:null,
+    exact:status==="done"?pending.exact:false,
+    area:$("area").value.trim(),url:url||"",note:$("note").value.trim(),
+    category:document.querySelector("input[name=category]:checked").value,
+    memberId:old?old.memberId:meId,status,sharedText:status==="pending"?raw:"",
+    createdAt:old?old.createdAt:now,updatedAt:now
+  };
+}
+async function write(status,okMsg){
+  const id=editingId||newId(),data=record(status);
+  const b1=$("saveBtn"),b2=$("laterBtn");
+  b1.disabled=b2.disabled=true;
+  try{
+    await withTimeout(store.savePlace(id,data),LIMITS.write,"timeout");
+    resetForm();hidden.delete(data.memberId);
+    toast(okMsg);setTab("browse");
+    if(status==="done")setTimeout(()=>{const p=places.find(x=>x.id===id);if(p)focusPlace(p)},60);
+  }catch(e){setMsg("formMsg",explain(e),"err")}
+  finally{b1.disabled=b2.disabled=false}
+}
+async function submitPlace(ev){
+  ev.preventDefault();
+  const name=$("name").value.trim();
+  if(readUrlField().error){setMsg("formMsg","原文網址要以 http 或 https 開頭。","err");$("url").focus();return}
+  if(!name){setMsg("formMsg","請輸入地點名稱，或按「先存起來」之後再補。","err");$("name").focus();return}
+  setMsg("formMsg","","err");
+  if(!pending){
+    $("saveBtn").disabled=true;
+    await autoLocate();
+    $("saveBtn").disabled=false;
+  }
+  if(!pending){setMsg("formMsg","找不到大概位置。請填地區，或展開「調整地圖位置」自己點。","err");$("fine").open=true;return}
+  write("done","已把「"+name+"」放上地圖");
+}
+function saveLater(){
+  if(readUrlField().error){setMsg("formMsg","原文網址要以 http 或 https 開頭。","err");return}
+  const url=$("url").value.trim()||extractUrl($("paste").value);
+  if(url&&!$("url").value.trim())$("url").value=url;
+  if(!url&&!$("paste").value.trim()&&!$("name").value.trim()){setMsg("formMsg","至少貼上連結或文字，之後才知道要補什麼。","err");return}
+  setMsg("formMsg","","err");
+  write("pending","已存到待補清單");
+}
+function setTab(t){
+  document.querySelector("main").dataset.tab=t;
+  $("tabBrowse").setAttribute("aria-selected",String(t==="browse"));
+  $("tabAdd").setAttribute("aria-selected",String(t==="add"));
+}
+
+/* ---------- 身分與分享 ---------- */
+function askWho(shared,cancellable,done){
+  $("gate").hidden=false;$("passForm").hidden=true;$("whoStep").hidden=false;
+  const info=$("whoShared");info.hidden=!shared;info.textContent=shared||"";
+  const box=$("whoBtns");box.replaceChildren();
+  Object.entries(members).forEach(([id,m])=>box.append(el("button",{class:"whoBtn"+(id===meId?" last":""),type:"button",onclick:()=>{
+    meId=id;ls.set("pocketmap.member",id);
+    $("gate").hidden=true;render();done&&done();
+  }},dot(m),el("span",{text:m.name+(id===ADMIN&&!/管理/.test(m.name)?"（管理員）":"")}))));
+  const c=$("whoCancel");c.hidden=!cancellable;c.onclick=()=>{$("gate").hidden=true};
+}
+function readShare(){
+  const s=new URLSearchParams(location.search);
+  const parts=["title","text","url"].map(k=>s.get(k)||"").map(v=>v.trim()).filter(Boolean);
+  if(!parts.length)return null;
+  try{history.replaceState(null,"",location.pathname)}catch(e){}
+  const uniq=[...new Set(parts)];
+  return uniq.join("\n").slice(0,4000);
+}
+function afterEnter(){
+  if(!started){started=true;store.onPlaces(list=>{places=list;render()},e=>{$("banner").hidden=false;$("banner").textContent=explain(e)})}
+  const saved=ls.get("pocketmap.member");
+  if(saved&&members[saved])meId=saved;
+  if(incoming){
+    const raw=incoming;incoming=null;
+    const u=extractUrl(raw);
+    askWho(u?"收到一則 "+platformOf(u)+" 分享":"收到一則分享",false,()=>{
+      resetForm();$("paste").value=raw;updatePlatform();setTab("add");analyze();
+    });
+  }else if(!meId)askWho("",false);
+  else{$("gate").hidden=true;render()}
+}
+async function enterRoom(cfg,r){
+  store=await createFirebaseStore(cfg,r);
+  room=r;ls.set("pocketmap.room",r);
+  afterEnter();
+}
+function boot(){
+  const title=window.SITE_NAME||"口袋地圖";
+  document.querySelectorAll(".siteName").forEach(n=>n.textContent=title);
+  document.title=title;
+  incoming=readShare();
+  if(!window.L){$("banner").hidden=false;$("banner").textContent="地圖元件載入失敗，請檢查網路後重新整理。";return}
+  if("serviceWorker" in navigator&&isSecureContext)navigator.serviceWorker.register("sw.js").catch(()=>{});
+  initMap();
+  $("q").addEventListener("input",e=>{query=e.target.value.trim();render()});
+  $("paste").addEventListener("input",updatePlatform);
+  $("paste").addEventListener("paste",()=>setTimeout(()=>{if($("paste").value.trim()&&window.AI_ENDPOINT&&room)analyze()},0));
+  $("url").addEventListener("input",updatePlatform);
+  $("analyzeBtn").addEventListener("click",analyze);
+  $("area").addEventListener("change",()=>{if(!pending||!pending.exact){clearPending();autoLocate()}});
+  $("name").addEventListener("change",()=>{if(!pending&&!$("area").value.trim())autoLocate()});
+  $("coords").addEventListener("input",handleCoords);
+  $("pickBtn").addEventListener("click",()=>setPicking(!picking));
+  $("placeForm").addEventListener("submit",submitPlace);
+  $("laterBtn").addEventListener("click",saveLater);
+  $("cancelEdit").addEventListener("click",resetForm);
+  $("tabBrowse").addEventListener("click",()=>setTab("browse"));
+  $("tabAdd").addEventListener("click",()=>setTab("add"));
+  $("switchBtn").addEventListener("click",()=>askWho("",true));
+  $("helpBtn").addEventListener("click",()=>{$("help").hidden=false;$("helpUrl").value=location.origin+location.pathname+"?text="});
+  $("helpClose").addEventListener("click",()=>{$("help").hidden=true});
+  $("helpCopy").addEventListener("click",async()=>{try{await navigator.clipboard.writeText($("helpUrl").value);toast("已複製")}catch(e){$("helpUrl").select()}});
+  renderCats();renderList([]);
+
+  const cfg=window.FIREBASE_CONFIG;
+  if(!cfg||!cfg.projectId){
+    store=createLocalStore();
+    $("banner").hidden=false;
+    $("banner").textContent="示範模式：內容是範例，新增的資料只存在這台裝置，朋友看不到。完成設定後就會變成共用地圖。";
+    afterEnter();
+    return;
+  }
+  $("leaveBtn").hidden=false;
+  $("leaveBtn").addEventListener("click",()=>{ls.del("pocketmap.room");ls.del("pocketmap.member");location.reload()});
+  $("gate").hidden=false;
+  const showPass=()=>{$("passForm").hidden=false;$("whoStep").hidden=true;$("pass").focus()};
+  const savedRoom=ls.get("pocketmap.room");
+  if(savedRoom)enterRoom(cfg,savedRoom).catch(e=>{showPass();setMsg("passMsg",explain(e),"err")});
+  else showPass();
+  $("passForm").addEventListener("submit",async ev=>{
+    ev.preventDefault();
+    const pass=$("pass").value;if(!pass.trim())return;
+    const b=$("passBtn");b.disabled=true;setMsg("passMsg","","err");
+    try{await enterRoom(cfg,await roomFromPass(cfg,pass))}
+    catch(e){setMsg("passMsg",e.code==="insecure"?e.message:explain(e),"err")}
+    finally{b.disabled=false}
+  });
+}
+boot();
+})();
+</script>
+</body>
+</html>
